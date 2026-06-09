@@ -1,475 +1,943 @@
-import React, { useState } from 'react';
-import { 
-  HeartPulse, 
-  Brain, 
-  Award, 
-  Stethoscope, 
-  Activity, 
-  BriefcaseMedical, 
-  GraduationCap, 
-  ShieldAlert,
-  ChevronDown,
-  Download,
-  Mail,
-  MessageCircle,
-  Sparkles,
-  Loader2,
-  Bot
-} from 'lucide-react';
-
-const apiKey = ""; // המפתח יסופק אוטומטית על ידי סביבת הריצה
-
-export default function App() {
-  const [activeTab, setActiveTab] = useState('about');
-  const [downloadMessage, setDownloadMessage] = useState('');
-  
-  // States for Gemini API Feature
-  const [medicalTerm, setMedicalTerm] = useState('');
-  const [explanation, setExplanation] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [apiError, setApiError] = useState('');
-
-  const handleDownload = () => {
-    setDownloadMessage('קורות החיים המלאים (PDF) יורדו כעת. (הדגמה)');
-    setTimeout(() => setDownloadMessage(''), 3000);
-  };
-
-  const handleExplainTerm = async (e) => {
-    e.preventDefault();
-    if (!medicalTerm.trim()) return;
-
-    setIsGenerating(true);
-    setExplanation('');
-    setApiError('');
-
-    const prompt = `
-      The worried parent is asking about the medical term: "${medicalTerm}".
-      Please explain it to them in simple, reassuring, and non-frightening Hebrew.
-      Keep it brief (2-3 sentences max).
-    `;
-
-    // Strong system instructions to restrict knowledge and enforce the fallback message.
-    const systemInstruction = `
-      You are an empathetic, highly skilled neonatal intensive care nurse (NICU nurse).
-      CRITICAL INSTRUCTION: You must answer ONLY based on accepted neonatal medical literature (such as Neofax, Core Curriculum for Neonatal Intensive Care Nursing, or standard NICU protocols).
-      If you do not have absolute certainty about the term based on these sources, or if the term is outside standard NICU context, you MUST NOT guess or hallucinate.
-      Instead, you MUST reply EXACTLY with this sentence and nothing else:
-      "במאגר המידע שלי לא מופיע הסבר לשאלה, מוזמן לפנות לצוות המטפל (:"
-      If you do know the answer from the literature, respond ONLY in Hebrew.
-    `;
-
-    try {
-      const maxRetries = 3;
-      let delay = 1000;
-      let response;
-
-      for (let i = 0; i < maxRetries; i++) {
-        try {
-          response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              systemInstruction: { parts: [{ text: systemInstruction }] }
-            })
-          });
-          
-          if (response.ok) break;
-          
-          if (i < maxRetries - 1) {
-            await new Promise(res => setTimeout(res, delay));
-            delay *= 2;
-          }
-        } catch (fetchErr) {
-          if (i === maxRetries - 1) throw fetchErr;
-          await new Promise(res => setTimeout(res, delay));
-          delay *= 2;
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NICU LIFE - פורטל הסכמות דיגיטלי</title>
+    <!-- Tailwind CSS for modern responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Heebo', sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+            -webkit-tap-highlight-color: transparent;
         }
-      }
+        /* Active styles for procedure steps */
+        .tab-btn.active {
+            background-color: #0d9488;
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(13, 148, 136, 0.25);
+            border-color: #0d9488;
+        }
+        .tab-btn.completed {
+            border-color: #10b981;
+            background-color: #ecfdf5;
+            color: #065f46;
+        }
+        /* Custom radio behaviors */
+        .option-card input[type="radio"]:checked + div {
+            border-color: #0d9488;
+            background-color: #f0fdfa;
+            box-shadow: 0 0 0 2px #0d9488;
+        }
+        .option-card.refuse input[type="radio"]:checked + div {
+            border-color: #e11d48;
+            background-color: #fff1f2;
+            box-shadow: 0 0 0 2px #e11d48;
+        }
+        .option-card.custom-option input[type="radio"]:checked + div {
+            border-color: #d97706;
+            background-color: #fffbeb;
+            box-shadow: 0 0 0 2px #d97706;
+        }
+        /* Signature Canvas custom styles */
+        #signature-pad {
+            border: 2px dashed #cbd5e1;
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            touch-action: none;
+            width: 100%;
+            height: 140px;
+            cursor: crosshair;
+        }
+        /* Transition utility */
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
 
-      if (!response || !response.ok) {
-         throw new Error('שגיאה בתקשורת מול השרת. אנא נסו שוב.');
-      }
-
-      const data = await response.json();
-      const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      
-      if (generatedText) {
-        setExplanation(generatedText);
-      } else {
-        throw new Error('לא התקבל הסבר, אנא נסו שוב.');
-      }
-
-    } catch (err) {
-      console.error(err);
-      setApiError('מצטערים, חלה שגיאה במערכת ה-AI. ייתכן שיש עומס כרגע, נסו שוב בעוד מספר רגעים.');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  // Helper function for tab styling
-  const getTabClass = (tabName) => {
-    const baseClass = "pb-2 whitespace-nowrap transition-all duration-300 ";
-    return activeTab === tabName 
-      ? baseClass + "text-[#D4AF37] border-b-2 border-[#D4AF37] font-bold" 
-      : baseClass + "text-[#4A5568] hover:text-[#1A252C] font-medium";
-  };
-
-  return (
-    <div dir="rtl" className="min-h-screen bg-[#FDFBF7] text-[#333333] font-sans selection:bg-amber-200">
-      <style dangerouslySetInnerHTML={{__html: `
-        @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&display=swap');
-        * { font-family: 'Heebo', sans-serif; }
-        /* Hide scrollbar for mobile tabs but allow scrolling */
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}} />
-
-      {/* Navbar - Fixed at the top */}
-      <nav className="fixed w-full bg-[#FDFBF7]/95 backdrop-blur-md z-50 border-b border-[#E8E1D5]">
-        <div className="max-w-7xl mx-auto px-6 pt-4">
-          <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4 mb-[-1px]">
-            
-            {/* Logo and Name (Right side due to RTL) */}
-            <div className="flex items-center gap-4 pb-3">
-              <div className="bg-[#D4AF37]/10 p-2 rounded-xl">
-                <Stethoscope className="text-[#D4AF37]" size={28} />
-              </div>
-              <div className="text-xl font-bold text-[#2C3E50] tracking-tight">נעמה אלון דונגי</div>
+    <!-- Top Navigation Header -->
+    <header class="bg-white border-b border-slate-100 shadow-sm py-4 px-6 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-teal-600 rounded-xl flex items-center justify-center shadow-md">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-slate-800 leading-tight">NICU LIFE</h1>
+                    <p class="text-xs text-slate-500 font-medium">פורטל קבלת החלטות והסכמה מדעת</p>
+                </div>
             </div>
             
-            {/* Navigation Tabs (Left side due to justify-between, aligns right on mobile) */}
-            <div className="flex overflow-x-auto hide-scrollbar gap-6 md:gap-8 text-sm sm:text-base">
-              <button onClick={() => setActiveTab('about')} className={getTabClass('about')}>מי אני</button>
-              <button onClick={() => setActiveTab('projects')} className={getTabClass('projects')}>פיתוחים ותוצרים</button>
-              <button onClick={() => setActiveTab('ai-demo')} className={`${getTabClass('ai-demo')} flex items-center gap-1`}>
-                AI בקליניקה <Sparkles size={14} className={activeTab === 'ai-demo' ? 'text-[#D4AF37]' : 'text-[#A0AAB2]'} />
-              </button>
-              <button onClick={() => setActiveTab('cv')} className={getTabClass('cv')}>קורות חיים</button>
-              <button onClick={() => setActiveTab('contact')} className={getTabClass('contact')}>צור קשר</button>
+            <!-- Global Status Bar -->
+            <div class="flex items-center gap-3 w-full sm:w-auto">
+                <span class="text-xs text-slate-500 font-semibold whitespace-nowrap">שלבי התקדמות:</span>
+                <div class="w-full sm:w-48 bg-slate-100 rounded-full h-2">
+                    <div id="global-progress" class="bg-teal-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <span id="progress-percent" class="text-xs font-bold text-teal-600">0%</span>
             </div>
-
-          </div>
         </div>
-      </nav>
+    </header>
 
-      {/* Main Content Area - dynamically renders the active tab */}
-      <main className="pt-32 pb-20 min-h-screen">
+    <!-- Main Content Container -->
+    <main class="max-w-7xl mx-auto w-full p-4 md:p-8 flex-grow">
         
-        {/* TAB 1: About */}
-        {activeTab === 'about' && (
-          <section className="px-6 flex flex-col justify-center items-center text-center animate-in fade-in duration-500">
-            <div className="max-w-3xl mx-auto mt-12 md:mt-24">
-              <div className="inline-flex items-center justify-center p-4 bg-[#F5EDE0] rounded-full mb-8 text-[#D4AF37] shadow-sm">
-                <HeartPulse size={40} strokeWidth={1.5} />
-              </div>
-              <h1 className="text-5xl md:text-6xl font-bold mb-6 text-[#1A252C] tracking-tight">
-                נעמה אלון דונגי
-              </h1>
-              <h2 className="text-xl md:text-2xl font-medium text-[#D4AF37] mb-8">
-                אחות מוסמכת • טיפול נמרץ פגים • ניהול סיכונים קליני
-              </h2>
-              <p className="text-lg md:text-xl text-[#4A5568] leading-relaxed mb-12 max-w-2xl mx-auto">
-                אשת מקצוע מיומנת ומסורה, בעלת ניסיון בסביבות עבודה עתירות לחץ. בעלת תשוקה אמיתית לבטיחות הטיפול, שיפור תהליכי עבודה ושילוב טכנולוגיות AI חדשניות במערכת הבריאות, תוך עבודה שיתופית בצוותים רב-מערכתיים.
-              </p>
-              <div className="flex justify-center gap-4 mb-12 flex-wrap">
-                <button onClick={() => setActiveTab('contact')} className="bg-[#1A252C] text-white px-6 py-3 rounded-full font-medium hover:bg-[#D4AF37] transition-colors shadow-sm hover:shadow-md">
-                  ליצירת קשר
-                </button>
-                <button onClick={() => setActiveTab('ai-demo')} className="bg-white border border-[#D4AF37] text-[#D4AF37] px-6 py-3 rounded-full font-medium hover:bg-[#D4AF37] hover:text-white transition-all flex items-center gap-2 shadow-sm hover:shadow-md">
-                  <Sparkles size={18} /> התנסות ב-AI רפואי
-                </button>
-                <button onClick={() => setActiveTab('projects')} className="bg-[#F5EDE0] text-[#1A252C] px-6 py-3 rounded-full font-medium hover:bg-[#E8E1D5] transition-colors shadow-sm hover:shadow-md">
-                  צפייה בפיתוחים
-                </button>
-              </div>
+        <!-- Welcome banner -->
+        <div class="mb-8 bg-gradient-to-r from-teal-700 to-teal-600 text-white p-6 rounded-2xl shadow-md relative overflow-hidden">
+            <div class="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]"></div>
+            <div class="relative z-10 max-w-2xl">
+                <h2 class="text-2xl font-bold mb-2">ברוכים הבאים למחלקת יילודים ופגים</h2>
+                <p class="text-teal-50 text-sm leading-relaxed">
+                    הורים יקרים, אנו כאן כדי להעניק לתינוקכם את הטיפול הטוב ביותר. לפניכם כלי אינטראקטיבי המציג את הבדיקות והטיפולים המומלצים במחלקה, לרבות יתרונות, חסרונות ומקום להתאמה אישית. אנא מלאו את הפרטים ועברו על הסעיפים.
+                </p>
             </div>
-          </section>
-        )}
+        </div>
 
-        {/* TAB 3: Projects */}
-        {activeTab === 'projects' && (
-          <section className="px-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
-            <div className="max-w-6xl mx-auto">
-              <div className="flex items-center gap-3 mb-12 border-b border-[#E8E1D5] pb-6">
-                <Activity className="text-[#D4AF37]" size={32} />
-                <h2 className="text-3xl font-bold text-[#1A252C]">פיתוחים, יוזמות ותוצרי למידה</h2>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-8">
-                {/* Project Card 1: Consent Form */}
-                <div className="group relative overflow-hidden rounded-2xl bg-white border border-[#E8E1D5] shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col justify-between">
-                  <div>
-                    <div className="h-2 bg-[#D4AF37] w-full"></div>
-                    <div className="p-8 pb-4">
-                      <ShieldAlert className="text-[#D4AF37] mb-4" size={28} />
-                      <h3 className="text-xl font-bold mb-3 text-[#1A252C]">מערכת דיגיטלית להסכמות לטיפול בילוד</h3>
-                      <p className="text-[#4A5568] leading-relaxed">
-                        פיתוח ממשק ייעודי המפשט ומנגיש את תהליך ההסכמה מדעת עבור הורי הפגייה לפני טיפולים רפואיים. המערכת שמה דגש על ניהול סיכונים, שקיפות קלינית והפחתת טעויות זיהוי בשלב קבלת ההחלטות.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="p-8 pt-0">
-                    <a 
-                      href="#" 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="inline-flex items-center gap-2 text-sm font-bold text-[#1A252C] hover:text-[#D4AF37] transition-colors group/link"
-                    >
-                      <span>להתנסות במערכת בלייב</span>
-                      <span className="transition-transform group-hover/link:-translate-x-1">←</span>
-                    </a>
-                  </div>
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- RIGHT COLUMN: Identity & Medical Background Card (Constant visibility) -->
+            <section class="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sticky lg:top-24">
+                <div class="flex items-center gap-2 pb-4 mb-4 border-b border-slate-100">
+                    <div class="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center font-bold">1</div>
+                    <h3 class="text-lg font-bold text-slate-800">פרטי היולדת והיילוד</h3>
                 </div>
 
-                {/* Project Card 2: Learning Platform */}
-                <div className="group relative overflow-hidden rounded-2xl bg-white border border-[#E8E1D5] shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col justify-between">
-                  <div>
-                    <div className="h-2 bg-[#D4AF37] w-full"></div>
-                    <div className="p-8 pb-4">
-                      <Brain className="text-[#D4AF37] mb-4" size={28} />
-                      <h3 className="text-xl font-bold mb-3 text-[#1A252C]">פלטפורמת למידה אינטראקטיבית למבחנים קליניים</h3>
-                      <p className="text-[#4A5568] leading-relaxed">
-                        סביבת למידה דיגיטלית מותאמת אישית שפותחה כדי לסייע לסטודנטים ולצוותים סיעודיים לתרגל, לשנן ולהטמיע חומר לימודי מורכב ביעילות גבוהה, תוך שימוש במדדי הצלחה ומשוב מיידי.
-                      </p>
+                <form id="details-form" class="space-y-4">
+                    <!-- Mother details -->
+                    <div class="space-y-3">
+                        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider">פרטי האם</h4>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">שם מלא של האם *</label>
+                            <input type="text" id="motherName" required class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition" placeholder="ישראל ישראלית">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">תעודת זהות האם *</label>
+                            <input type="text" id="motherId" required class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition" placeholder="012345678">
+                        </div>
                     </div>
-                  </div>
-                  <div className="p-8 pt-0">
-                    <a 
-                      href="#" 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="inline-flex items-center gap-2 text-sm font-bold text-[#1A252C] hover:text-[#D4AF37] transition-colors group/link"
-                    >
-                      <span>לכניסה לאתר הלמידה והתרגול</span>
-                      <span className="transition-transform group-hover/link:-translate-x-1">←</span>
-                    </a>
-                  </div>
+
+                    <!-- Newborn details -->
+                    <div class="space-y-3 pt-3 border-t border-slate-100">
+                        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider">פרטי היילוד</h4>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 mb-1">שבוע היריון *</label>
+                                <input type="text" id="gestWeek" required class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition" placeholder="למשל 35+4">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-600 mb-1">משקל לידה (גרם)</label>
+                                <input type="number" id="birthWeight" class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition" placeholder="למשל 2350">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">תאריך ושעת לידה</label>
+                            <input type="datetime-local" id="birthTime" class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition">
+                        </div>
+                    </div>
+
+                    <!-- Medical conditions -->
+                    <div class="space-y-3 pt-3 border-t border-slate-100">
+                        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider">מידע רפואי חשוב</h4>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">רגישויות ותרופות מיוחדות (אם אין יש לרשום "אין") *</label>
+                            <textarea id="allergies" required rows="2" class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition" placeholder="אנא פרטו רגישויות ליוד, פלסטרים, לטקס, תרופות..."></textarea>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="mt-4 p-3 bg-teal-50/50 rounded-xl border border-teal-100 flex items-start gap-2">
+                    <svg class="w-5 h-5 text-teal-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <p class="text-[11px] text-teal-800 leading-relaxed">
+                        השלמת פרטים אלו חיונית על מנת להבטיח את ההתאמה המרבית לתינוקכם בעת רישום הבחירות בתיק הרפואי.
+                    </p>
                 </div>
+            </section>
+
+            <!-- LEFT COLUMN: Interactive Consent Navigation -->
+            <section class="lg:col-span-8 flex flex-col gap-6">
                 
-                {/* Project Card 3: Functionality Decline */}
-                <div className="group relative overflow-hidden rounded-2xl bg-white border border-[#E8E1D5] shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col justify-between md:col-span-2">
-                  <div>
-                    <div className="h-2 bg-[#D4AF37] w-full"></div>
-                    <div className="p-8 pb-4">
-                      <BriefcaseMedical className="text-[#D4AF37] mb-4" size={28} />
-                      <h3 className="text-xl font-bold mb-3 text-[#1A252C]">מניעת הידרדרות תפקודית בקשישים</h3>
-                      <p className="text-[#4A5568] leading-relaxed max-w-4xl">
-                        הובלה והטמעה של פרויקט ייעודי במחלקה הגריאטרית בבית החולים הציבורי אסותא אשדוד. הפרויקט בוצע בשיתוף פעולה הדוק עם מחלקת הפיזיותרפיה למען שימור העצמאות של מאושפזים מבוגרים.
-                      </p>
+                <!-- Quick Stepper Navigation (5 tabs) -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+                    <div class="text-xs font-bold text-slate-500 mb-3 px-2">בחרו סעיף לעיון וקביעת החלטה:</div>
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-2" id="tabs-container">
+                        <button type="button" onclick="switchTab(0)" id="tab-0" class="tab-btn active border border-slate-200 rounded-xl py-3 px-1 text-center transition duration-200 text-xs font-bold flex flex-col items-center gap-1 justify-center">
+                            <span>1. בדיקת PKU</span>
+                            <span id="tab-status-0" class="text-[10px] text-slate-400 font-normal">טרם נקבע</span>
+                        </button>
+                        <button type="button" onclick="switchTab(1)" id="tab-1" class="tab-btn border border-slate-200 rounded-xl py-3 px-1 text-center transition duration-200 text-xs font-bold flex flex-col items-center gap-1 justify-center">
+                            <span>2. רחצת יילוד</span>
+                            <span id="tab-status-1" class="text-[10px] text-slate-400 font-normal">טרם נקבע</span>
+                        </button>
+                        <button type="button" onclick="switchTab(2)" id="tab-2" class="tab-btn border border-slate-200 rounded-xl py-3 px-1 text-center transition duration-200 text-xs font-bold flex flex-col items-center gap-1 justify-center">
+                            <span>3. משחת עיניים</span>
+                            <span id="tab-status-2" class="text-[10px] text-slate-400 font-normal">טרם נקבע</span>
+                        </button>
+                        <button type="button" onclick="switchTab(3)" id="tab-3" class="tab-btn border border-slate-200 rounded-xl py-3 px-1 text-center transition duration-200 text-xs font-bold flex flex-col items-center gap-1 justify-center">
+                            <span>4. הנקה ותזונה</span>
+                            <span id="tab-status-3" class="text-[10px] text-slate-400 font-normal">טרם נקבע</span>
+                        </button>
+                        <button type="button" onclick="switchTab(4)" id="tab-4" class="tab-btn border border-slate-200 rounded-xl py-3 px-1 text-center transition duration-200 text-xs font-bold flex flex-col items-center gap-1 justify-center">
+                            <span>5. חיסונים</span>
+                            <span id="tab-status-4" class="text-[10px] text-slate-400 font-normal">טרם נקבע</span>
+                        </button>
                     </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* TAB 4: AI Demo */}
-        {activeTab === 'ai-demo' && (
-          <section className="px-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
-            <div className="max-w-4xl mx-auto">
-              
-              <div className="bg-[#1A252C] rounded-3xl p-8 md:p-12 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-[#D4AF37] rounded-full mix-blend-multiply filter blur-3xl opacity-20 transform translate-x-1/2 -translate-y-1/2"></div>
-                <div className="absolute bottom-0 left-0 w-64 h-64 bg-white rounded-full mix-blend-overlay filter blur-3xl opacity-10 transform -translate-x-1/2 translate-y-1/2"></div>
-                
-                <div className="relative z-10 text-center mb-10">
-                  <div className="inline-flex bg-[#D4AF37]/20 p-4 rounded-full mb-6">
-                    <Bot className="text-[#D4AF37]" size={40} />
-                  </div>
-                  <h2 className="text-3xl font-bold text-white mb-4">מסביר מונחים רפואיים להורים ✨</h2>
-                  <p className="text-[#A0AAB2] text-lg">
-                    כהמחשה לשילוב AI קליני (כפי שלמדתי באוניברסיטת ת"א), פיתחתי כלי זה. הורים בפגייה נחשפים למושגים מלחיצים. הזינו מונח רפואי, והבינה המלאכותית תסביר אותו בצורה מרגיעה, פשוטה ואמפתית, <span className="font-bold text-[#D4AF37]">על בסיס ספרות מקצועית בלבד</span>.
-                  </p>
                 </div>
 
-                <div className="bg-white rounded-2xl p-6 md:p-8 shadow-inner relative z-10">
-                  <form onSubmit={handleExplainTerm} className="flex flex-col md:flex-row gap-4 mb-6">
-                    <input 
-                      type="text" 
-                      value={medicalTerm}
-                      onChange={(e) => setMedicalTerm(e.target.value)}
-                      placeholder="לדוגמה: אפניאה, ברדיקרדיה, בילירובין..." 
-                      className="flex-1 bg-[#FDFBF7] border border-[#E8E1D5] rounded-xl px-6 py-4 text-[#1A252C] focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:border-transparent text-lg"
-                      disabled={isGenerating}
-                    />
-                    <button 
-                      type="submit" 
-                      disabled={isGenerating || !medicalTerm.trim()}
-                      className="bg-[#D4AF37] text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-[#C5A028] transition-all disabled:opacity-70 flex items-center justify-center gap-2 whitespace-nowrap min-w-[160px]"
-                    >
-                      {isGenerating ? (
-                        <Loader2 className="animate-spin" size={24} />
-                      ) : (
-                        <>
-                          <Sparkles size={20} />
-                          הסבר לי 
-                        </>
-                      )}
+                <!-- Content Area for Active Decision (Dynamic loading inside tabs) -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 md:p-8 relative">
+                    
+                    <!-- ITEM 0: PKU (בדיקת סקר) -->
+                    <div id="content-0" class="tab-content fade-in">
+                        <div class="flex items-center gap-3 mb-4">
+                            <span class="p-2.5 bg-teal-50 text-teal-600 rounded-xl font-bold text-lg">🧬</span>
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800">בדיקת סקר יילודים (בדיקת PKU / דם מהעקב)</h3>
+                                <p class="text-xs text-slate-500">איתור מוקדם של מחלות מטבוליות ואנדוקריניות מולדות</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-xl p-4 mb-6">
+                            <h4 class="text-xs font-bold text-slate-700 mb-1">מידע כללי</h4>
+                            <p class="text-sm text-slate-600 leading-relaxed">
+                                בדיקה לאומית המבוצעת לאחר גיל 36 שעות (או במועד שחרור התינוק) באמצעות דקירה קלה בעקב הרגל ולקיחת מספר טיפות דם על נייר סינון מיוחד. הבדיקה מזהה עשרות מחלות גנטיות, מטבוליות ואנדוקריניות נדירות (כמו פנילקטונוריה ותת-תריסיות מולדת) לפני שהן מראות סימנים חיצוניים.
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                                <h5 class="text-xs font-bold text-emerald-800 mb-2 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> יתרונות הטיפול
+                                </h5>
+                                <p class="text-xs text-emerald-900 leading-relaxed">
+                                    גילוי מוקדם ביותר מאפשר התחלת טיפול מידי או התאמת תזונה פשוטה. התערבות מוקדמת זו מצילה חיים ומונעת נזק מוחי, פגיעה התפתחותית ולקויות קשות ובלתי הפיכות.
+                                </p>
+                            </div>
+                            <div class="bg-rose-50 border border-rose-100 rounded-xl p-4">
+                                <h5 class="text-xs font-bold text-rose-800 mb-2 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> חסרונות ואי-נוחות
+                                </h5>
+                                <p class="text-xs text-rose-900 leading-relaxed">
+                                    הדקירה בעקב כרוכה באי נוחות רגעית ובכי של היילוד. אנו ממליצים לבצע אותה במהלך הנקה, מגע עור לעור (קנגורו) או מתן תמיסת מי סוכר כדי למזער את הכאב משמעותית.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ITEM 1: רחצה -->
+                    <div id="content-1" class="tab-content hidden fade-in">
+                        <div class="flex items-center gap-3 mb-4">
+                            <span class="p-2.5 bg-teal-50 text-teal-600 rounded-xl font-bold text-lg">🛁</span>
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800">רחצה ראשונית במחלקה</h3>
+                                <p class="text-xs text-slate-500">רחיצת התינוק להסרת הפרשות וההחלטה על עיתויה</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-xl p-4 mb-6">
+                            <h4 class="text-xs font-bold text-slate-700 mb-1">מידע כללי</h4>
+                            <p class="text-sm text-slate-600 leading-relaxed">
+                                עם הלידה, עור התינוק מכוסה בשכבה שומנית לבנה הנקראת "וורניקס" (Vernix caseosa). הרחצה נועדה לנקות את שאריות הנוזלים ותאי הדם של האם. כיום ההמלצה הרפואית היא להשהות את הרחצה הראשונה ב-12 עד 24 שעות לאחר הלידה, בהתאם ליציבות חום גופו של התינוק.
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                                <h5 class="text-xs font-bold text-emerald-800 mb-2 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> יתרונות השהיית הרחצה
+                                </h5>
+                                <p class="text-xs text-emerald-900 leading-relaxed">
+                                    שמירה על שכבת הוורניקס מזינה ומגנה על עור היילוד הרגיש מפני יובש וזיהומים, משפרת את ייצוב חום הגוף ומסייעת בשמירה על רמת סוכר מאוזנת ותמיכה בהנקה.
+                                </p>
+                            </div>
+                            <div class="bg-rose-50 border border-rose-100 rounded-xl p-4">
+                                <h5 class="text-xs font-bold text-rose-800 mb-2 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> חסרונות / משמעות
+                                </h5>
+                                <p class="text-xs text-rose-900 leading-relaxed">
+                                    רחצה מוקדמת מדי עלולה לגרום לירידת חום גוף (היפותרמיה) או לעורר לחץ פיזיולוגי בתינוק. במידה ואין סיכון זיהומי (כגון מים מקוניאליים חריגים), מומלץ להמתין.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ITEM 2: משחת עיניים -->
+                    <div id="content-2" class="tab-content hidden fade-in">
+                        <div class="flex items-center gap-3 mb-4">
+                            <span class="p-2.5 bg-teal-50 text-teal-600 rounded-xl font-bold text-lg">👁️</span>
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800">טיפול מונע במשחת עיניים (Erythromycin)</h3>
+                                <p class="text-xs text-slate-500">מניעת דלקות עיניים קשות ביילודים</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-xl p-4 mb-6">
+                            <h4 class="text-xs font-bold text-slate-700 mb-1">מידע כללי</h4>
+                            <p class="text-sm text-slate-600 leading-relaxed">
+                                טיפול מקומי במשחת עיניים אנטיביוטית המבוצע באופן שגרתי בשעות הראשונות שלאחר הלידה. המשחה נועדה למנוע זיהומים הנגרמים מחשיפה לחיידקים (כמו כלמידיה או זיבה) העלולים להימצא בתעלת הלידה של האם, לעיתים קרובות ללא כל סימנים מקדימים.
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                                <h5 class="text-xs font-bold text-emerald-800 mb-2 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> יתרונות הטיפול
+                                </h5>
+                                <p class="text-xs text-emerald-900 leading-relaxed">
+                                    הגנה יעילה ומיידית מפני "אופטלמיה ניאונטורום" (דלקת עיניים חמורה של היילוד) אשר ללא טיפול מונע עלולה להוביל לפגיעה קבועה בקרנית העין ואף לעיוורון חלקי או מלא.
+                                </p>
+                            </div>
+                            <div class="bg-rose-50 border border-rose-100 rounded-xl p-4">
+                                <h5 class="text-xs font-bold text-rose-800 mb-2 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> חסרונות ואי-נוחות
+                                </h5>
+                                <p class="text-xs text-rose-900 leading-relaxed">
+                                    המשחה יוצרת טשטוש ראייה קל וזמני בדקות הראשונות לאחר המריחה, ועלולה לגרום לגירוי מקומי קל וחולף של הלחמית. התינוק עלול להיראות פחות ממוקד בעת קשר העין הראשוני.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ITEM 3: הנקה -->
+                    <div id="content-3" class="tab-content hidden fade-in">
+                        <div class="flex items-center gap-3 mb-4">
+                            <span class="p-2.5 bg-teal-50 text-teal-600 rounded-xl font-bold text-lg">🍼</span>
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800">הנקה, תזונת היילוד וסיוע בפורמולה (תמ"ל)</h3>
+                                <p class="text-xs text-slate-500">הנחיית מדיניות ההזנה המועדפת עליכם במחלקה</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-xl p-4 mb-6">
+                            <h4 class="text-xs font-bold text-slate-700 mb-1">מידע כללי</h4>
+                            <p class="text-sm text-slate-600 leading-relaxed">
+                                אנו מעודדים ותומכים בהנקה מלאה כבחירה הבריאה ביותר. יחד עם זאת, לעיתים עקב סיבות רפואיות (ירידת סוכר, התייבשות, עיכוב בהגעת חלב אם) או בחירת הורים, נדרשת תוספת של תרכובת מזון לתינוק (תמ"ל). באפשרותכם להגדיר בצורה מדויקת מתי וכיצד יינתן תמ"ל.
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                                <h5 class="text-xs font-bold text-emerald-800 mb-2 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> יתרונות הנקה בלעדית
+                                </h5>
+                                <p class="text-xs text-emerald-900 leading-relaxed">
+                                    חיזוק המערכת החיסונית של התינוק עם נוגדנים המגנים ממחלות, יצירת קשר חם ופיזי הדוק עם האם, התאמה תזונתית מלאה לעיכול קל ושיעור נמוך יותר של דלקות מעיים.
+                                </p>
+                            </div>
+                            <div class="bg-rose-50 border border-rose-100 rounded-xl p-4">
+                                <h5 class="text-xs font-bold text-rose-800 mb-2 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> חסרונות / השלכות שילוב תמ"ל
+                                </h5>
+                                <p class="text-xs text-rose-900 leading-relaxed">
+                                    שילוב מוקדם מדי של תמ"ל שלא לצורך רפואי עלול להקטין את ייצור החלב אצל האם וליצור העדפת פטמה בתינוק. אנו נכבד ונתמוך בכל בחירה שתגדירו.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ITEM 4: חיסונים -->
+                    <div id="content-4" class="tab-content hidden fade-in">
+                        <div class="flex items-center gap-3 mb-4">
+                            <span class="p-2.5 bg-teal-50 text-teal-600 rounded-xl font-bold text-lg">💉</span>
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800">חיסונים מומלצים (ויטמין K וצהבת B)</h3>
+                                <p class="text-xs text-slate-500">חיסון למניעת זיהום בצהבת נגיפית וזריקת ויטמין K למניעת דימום</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-xl p-4 mb-6">
+                            <h4 class="text-xs font-bold text-slate-700 mb-1">מידע כללי</h4>
+                            <p class="text-sm text-slate-600 leading-relaxed">
+                                <strong>ויטמין K:</strong> יילודים נולדים עם רמה נמוכה של ויטמין K, האחראי על מערכת הקרישה. מניעה בזריקה לשריר הירך מיד לאחר הלידה מונעת מצב מסכן חיים הנקרא "מחלת דימום של היילוד".<br>
+                                <strong>חיסון צהבת B:</strong> מונע הדבקה בנגיף הפטיטיס B אשר עלול להוביל לצהבת כרונית קשה, שחמת וסרטן כבד בעתיד.
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                                <h5 class="text-xs font-bold text-emerald-800 mb-2 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> יתרונות החיסונים
+                                </h5>
+                                <p class="text-xs text-emerald-900 leading-relaxed">
+                                    מניעה מוחלטת וכמעט 100% הגנה מפני דימומים מוחיים ופנימיים קשים בינקות, והגנה ארוכת טווח מפני הידבקות בצהבת ויראלית קטלנית.
+                                </p>
+                            </div>
+                            <div class="bg-rose-50 border border-rose-100 rounded-xl p-4">
+                                <h5 class="text-xs font-bold text-rose-800 mb-2 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> חסרונות ותופעות לוואי
+                                </h5>
+                                <p class="text-xs text-rose-900 leading-relaxed">
+                                    אי נוחות קלה כתוצאה מהזריקות בשריר הירך, אדמומיות או נפיחות מקומית קלה שחולפת תוך ימים ספורים.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Active Decision Block & Custom Notes -->
+                    <div class="mt-6 border-t border-slate-100 pt-6">
+                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">מהי החלטתכם בנושא זה?</h4>
+                        
+                        <div class="space-y-3" id="decision-options-container">
+                            <!-- Radio option: Approved -->
+                            <label class="option-card block relative cursor-pointer">
+                                <input type="radio" name="current_decision" value="approve" class="peer sr-only" onchange="handleDecisionChange()">
+                                <div class="p-3.5 rounded-xl border-2 border-slate-200 transition-all hover:bg-slate-50 flex items-center justify-between">
+                                    <span class="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                        <span class="w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs">✓</span>
+                                        אני מאשר/ת את ביצוע הטיפול/הבדיקה במלואה
+                                    </span>
+                                    <span class="text-xs text-teal-600 font-semibold opacity-0 peer-checked:opacity-100">נבחר</span>
+                                </div>
+                            </label>
+
+                            <!-- Radio option: Refused -->
+                            <label class="option-card refuse block relative cursor-pointer">
+                                <input type="radio" name="current_decision" value="refuse" class="peer sr-only" onchange="handleDecisionChange()">
+                                <div class="p-3.5 rounded-xl border-2 border-slate-200 transition-all hover:bg-slate-50 flex items-center justify-between">
+                                    <span class="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                        <span class="w-5 h-5 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center text-xs">✗</span>
+                                        אני מסרב/ת לביצוע הטיפול/הבדיקה
+                                    </span>
+                                    <span class="text-xs text-rose-600 font-semibold opacity-0 peer-checked:opacity-100">נבחר סירוב</span>
+                                </div>
+                            </label>
+
+                            <!-- Radio option: Custom/Conditional -->
+                            <label class="option-card custom-option block relative cursor-pointer">
+                                <input type="radio" name="current_decision" value="conditional" class="peer sr-only" onchange="handleDecisionChange()">
+                                <div class="p-3.5 rounded-xl border-2 border-slate-200 transition-all hover:bg-slate-50 flex items-center justify-between">
+                                    <span class="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                        <span class="w-5 h-5 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center text-xs">!</span>
+                                        יש לי תנאים ספציפיים / מבקש/ת להתייעץ
+                                    </span>
+                                    <span class="text-xs text-amber-600 font-semibold opacity-0 peer-checked:opacity-100">מותנה</span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <!-- Custom comments & instructions for this item -->
+                        <div class="mt-4">
+                            <label class="block text-xs font-bold text-slate-600 mb-1.5 flex items-center gap-1">
+                                <span>הערות מיוחדות, מגבלות או בקשות אישיות לגבי סעיף זה:</span>
+                                <span class="text-slate-400 font-normal">(יוצג לצוות הרפואי)</span>
+                            </label>
+                            <textarea id="current-notes" oninput="saveCurrentNotes()" rows="2" class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition" placeholder="למשל: 'אבקש לבצע את הבדיקה רק בנוכחותי', או 'נא לא לתת פורמולה ללא אישור טלפוני מראש'"></textarea>
+                        </div>
+
+                        <!-- Stepper Actions Inside Card -->
+                        <div class="flex justify-between items-center mt-6 pt-4 border-t border-slate-100">
+                            <button type="button" id="prev-btn" onclick="navigateTab(-1)" class="text-slate-500 hover:text-slate-800 font-bold text-sm px-4 py-2 transition flex items-center gap-1">
+                                <span>עבור לסעיף הקודם</span>
+                            </button>
+                            <button type="button" id="next-btn" onclick="navigateTab(1)" class="bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm px-6 py-2 rounded-xl shadow-md shadow-teal-600/10 transition flex items-center gap-1">
+                                <span id="next-btn-text">לסעיף הבא</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SIGNATURE & DECLARATION CARD (Appears below or unlocks when all selections are saved) -->
+                <div class="bg-slate-900 text-white rounded-2xl shadow-xl p-6 md:p-8" id="signature-section">
+                    <div class="mb-4">
+                        <span class="text-xs font-bold bg-teal-500/20 text-teal-300 py-1 px-2.5 rounded-full">שלב סופי ומחייב</span>
+                        <h3 class="text-xl font-bold mt-2">הצהרת הורים וחתימה דיגיטלית</h3>
+                    </div>
+
+                    <p class="text-xs text-slate-300 leading-relaxed text-justify mb-6">
+                        אני, החתום/ה מטה, מצהיר/ה בזאת כי הוסברו לי המשמעויות הקליניות, היתרונות והסיכונים האפשריים של כל אחד מחמשת הטיפולים המפורטים לעיל. בחירותיי בכל סעיף וסעיף וכן ההערות והמגבלות שהוספתי מייצגות את רצוני החופשי והמלא. 
+                        ידוע לי כי במצבי חירום רפואיים בהם נשקפת סכנה מיידית לחיי התינוק, הצוות יפעל להצלת חיים בהתאם לסטנדרט הרפואי המקובל.
+                    </p>
+
+                    <!-- Summary representation in compact list -->
+                    <div class="bg-slate-800 rounded-xl p-4 mb-6 border border-slate-700/50">
+                        <h4 class="text-xs font-bold text-teal-400 mb-2">סיכום הבחירות שלך:</h4>
+                        <ul class="space-y-1.5 text-xs text-slate-300" id="final-summary-list">
+                            <li>1. בדיקת PKU: <span class="font-bold text-amber-400">טרם נקבעה החלטה</span></li>
+                            <li>2. רחצת יילוד: <span class="font-bold text-amber-400">טרם נקבעה החלטה</span></li>
+                            <li>3. משחת עיניים: <span class="font-bold text-amber-400">טרם נקבעה החלטה</span></li>
+                            <li>4. הנקה ותזונה: <span class="font-bold text-amber-400">טרם נקבעה החלטה</span></li>
+                            <li>5. חיסונים: <span class="font-bold text-amber-400">טרם נקבעה החלטה</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+                        <!-- Legal Consent Box -->
+                        <div>
+                            <label class="flex items-start gap-3 cursor-pointer">
+                                <input type="checkbox" id="legal-check" onchange="checkFormValidity()" class="mt-1 w-5 h-5 text-teal-600 border-slate-700 rounded focus:ring-teal-500 bg-slate-800">
+                                <span class="text-xs font-medium text-slate-300 leading-relaxed">
+                                    אני מאשר/ת כי קראתי בעיון, הבנתי את כל המידע וההשלכות של החלטותיי, ואני חותמ/ת על טופס זה מדעת.
+                                </span>
+                            </label>
+                            
+                            <div class="mt-4 p-3 bg-slate-800/60 rounded-xl border border-slate-700 text-[11px] text-slate-400">
+                                <strong>הערה:</strong> לאחר שליחת הטופס, המערכת תינעל לעריכה והנתונים יועברו ישירות לתיק הרפואי של מחלקת היילודים.
+                            </div>
+                        </div>
+
+                        <!-- Canvas Signature Pad -->
+                        <div class="space-y-2">
+                            <label class="block text-xs font-bold text-slate-300">חתימה דיגיטלית (חתמו בתוך הריבוע באמצעות האצבע או העכבר):</label>
+                            <canvas id="signature-pad"></canvas>
+                            <div class="flex justify-between items-center text-xs">
+                                <span id="signature-status" class="text-rose-400">חובה לחתום כדי לשלוח</span>
+                                <button type="button" onclick="clearSignature()" class="text-slate-400 hover:text-white underline">נקה חתימה</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Validation error block -->
+                    <div id="validation-errors" class="mt-4 p-3 bg-rose-950/50 border border-rose-800/50 text-rose-300 text-xs rounded-xl hidden font-medium"></div>
+
+                    <!-- Form Submit Action -->
+                    <div class="mt-6 flex justify-end">
+                        <button type="button" id="submit-btn" onclick="submitConsentForm()" class="w-full md:w-auto bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold py-3.5 px-10 rounded-xl shadow-lg transition duration-200 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+                            אישור סופי ושליחת הטופס לצוות
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Success Screen Overlay (Hidden initially) -->
+                <div class="bg-white rounded-2xl shadow-xl p-8 border border-emerald-100 text-center hidden fade-in" id="success-screen">
+                    <div class="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <svg class="w-10 h-10 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-2xl font-bold text-slate-800 mb-2">הסכמותיכם נקלטו בהצלחה!</h3>
+                    <p class="text-sm text-slate-500 max-w-md mx-auto mb-6 leading-relaxed">
+                        הטופס נחתם דיגיטלית ושותף ישירות בתיק הרפואי של מחלקת היילודים והפגים שלכם. צוות המחלקה עודכן בבקשותיכם ובדגשים שהזנתם.
+                    </p>
+                    
+                    <div class="bg-slate-50 rounded-xl p-4 max-w-sm mx-auto text-xs text-slate-600 mb-6 text-right space-y-1">
+                        <p><strong>קוד אישור דיגיטלי:</strong> <span class="font-mono text-teal-600">NL-2026-9812A</span></p>
+                        <p><strong>שם האם:</strong> <span id="success-mother-name"></span></p>
+                        <p><strong>תעודת זהות:</strong> <span id="success-mother-id"></span></p>
+                        <p><strong>תאריך חתימה:</strong> <span id="success-date"></span></p>
+                    </div>
+
+                    <button type="button" onclick="resetForm()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-6 rounded-xl transition text-xs">
+                        חתימה על טופס חדש / איפוס
                     </button>
-                  </form>
-
-                  {/* Error Message */}
-                  {apiError && (
-                    <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-6 flex items-start gap-3">
-                      <ShieldAlert className="shrink-0 mt-0.5" size={20} />
-                      <p>{apiError}</p>
-                    </div>
-                  )}
-
-                  {/* AI Result Area */}
-                  <div className={`transition-all duration-500 overflow-hidden ${explanation ? 'max-h-96 opacity-100 mt-6' : 'max-h-0 opacity-0'}`}>
-                    <div className="bg-[#F5EDE0] p-6 rounded-xl relative border border-[#E8E1D5]">
-                      <div className="absolute top-4 left-4 text-[#D4AF37]/30">
-                        <Bot size={40} />
-                      </div>
-                      <h4 className="text-[#1A252C] font-bold text-lg mb-2 flex items-center gap-2">
-                        <Sparkles className="text-[#D4AF37]" size={18} /> תשובת האחות (AI):
-                      </h4>
-                      <p className="text-[#4A5568] text-lg leading-relaxed relative z-10">
-                        {explanation}
-                      </p>
-                    </div>
-                  </div>
                 </div>
-              </div>
-              
-            </div>
-          </section>
-        )}
 
-        {/* TAB 5: CV */}
-        {activeTab === 'cv' && (
-          <section className="px-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
-            <div className="max-w-4xl mx-auto">
-              <div className="flex justify-between items-center mb-12 border-b border-[#E8E1D5] pb-6">
-                <div className="flex items-center gap-3">
-                  <GraduationCap className="text-[#D4AF37]" size={32} />
-                  <h2 className="text-3xl font-bold text-[#1A252C]">קורות חיים</h2>
-                </div>
-                <button 
-                  onClick={handleDownload}
-                  className="hidden md:flex items-center gap-2 bg-[#F5EDE0] text-[#1A252C] px-4 py-2 rounded-full font-bold text-sm hover:bg-[#E8E1D5] transition-colors"
-                >
-                  <Download size={16} />
-                  הורדת קובץ
-                </button>
-              </div>
+            </section>
 
-              {downloadMessage && (
-                <div className="bg-green-50 text-green-700 p-4 rounded-xl mb-8 font-medium">
-                  {downloadMessage}
-                </div>
-              )}
+        </div>
+    </main>
 
-              <div className="space-y-16 relative before:absolute before:inset-0 before:ml-auto before:mr-[15px] md:before:mr-[19px] before:w-0.5 before:bg-[#E8E1D5]">
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-100 py-6 mt-12 text-center text-xs text-slate-400 font-medium">
+        <p>© 2026 NICU LIFE. כל הזכויות שמורות למחלקת פגים ויילודים.</p>
+        <p class="mt-1 text-slate-300">אנו מחויבים לרמת בטיחות המידע הגבוהה ביותר ולתקני משרד הבריאות.</p>
+    </footer>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        
+        // Define global variables to hold selections and input details
+        let activeTab = 0;
+        const totalTabs = 5;
+
+        // Structured state for user selections and customized notes
+        const consentState = {
+            decisions: Array(totalTabs).fill(null), // Array tracking: null, 'approve', 'refuse', 'conditional'
+            notes: Array(totalTabs).fill('')        // Custom strings for each procedure
+        };
+
+        // Signature state variables
+        let canvas, ctx;
+        let isDrawing = false;
+        let hasSigned = false;
+
+        window.onload = function () {
+            // Setup components on screen load
+            initSignaturePad();
+            renderTabState();
+            updateGlobalProgress();
+            
+            // Sync default form events & update sizing of canvas
+            window.addEventListener('resize', resizeCanvas);
+            setTimeout(resizeCanvas, 100);
+        };
+
+
+        // Swapping between active view blocks
+        function switchTab(index) {
+            // Store and save elements of current active tab first
+            saveCurrentNotes();
+
+            // Hide all tab contents
+            for (let i = 0; i < totalTabs; i++) {
+                document.getElementById(`content-${i}`).classList.add('hidden');
+                document.getElementById(`tab-${i}`).classList.remove('active');
+            }
+
+            // Reveal selection
+            activeTab = index;
+            document.getElementById(`content-${activeTab}`).classList.remove('hidden');
+            document.getElementById(`tab-${activeTab}`).classList.add('active');
+
+            // Set current decision radio matching saved state
+            const radioValue = consentState.decisions[activeTab];
+            const radios = document.getElementsByName('current_decision');
+            
+            // Clear current radios
+            for (let radio of radios) {
+                radio.checked = (radio.value === radioValue);
+            }
+
+            // Load saved notes into the current textarea
+            document.getElementById('current-notes').value = consentState.notes[activeTab] || '';
+
+            // Update footer navigations depending on first/last index
+            document.getElementById('prev-btn').style.visibility = (activeTab === 0) ? 'hidden' : 'visible';
+            
+            const nextBtnText = document.getElementById('next-btn-text');
+            if (activeTab === totalTabs - 1) {
+                nextBtnText.innerText = 'מעבר לחתימה והצהרה';
+            } else {
+                nextBtnText.innerText = 'לסעיף הבא';
+            }
+
+            // Sync visual headers
+            renderTabState();
+            updateGlobalProgress();
+        }
+
+        // Stepper click controls
+        function navigateTab(direction) {
+            let targetTab = activeTab + direction;
+            if (targetTab >= 0 && targetTab < totalTabs) {
+                switchTab(targetTab);
+            } else if (targetTab === totalTabs) {
+                // Focus on signature block
+                document.getElementById('signature-section').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        // Keep local decisions safe as we click around
+        function handleDecisionChange() {
+            const selectedRadio = document.querySelector('input[name="current_decision"]:checked');
+            if (selectedRadio) {
+                consentState.decisions[activeTab] = selectedRadio.value;
+            }
+            renderTabState();
+            updateGlobalProgress();
+            updateFinalSummary();
+            checkFormValidity();
+        }
+
+        // Cache text inputs on individual modules
+        function saveCurrentNotes() {
+            const txt = document.getElementById('current-notes').value;
+            consentState.notes[activeTab] = txt;
+        }
+
+        // Render clean Hebrew status text directly onto the visual tabs
+        function renderTabState() {
+            for (let i = 0; i < totalTabs; i++) {
+                const statusSpan = document.getElementById(`tab-status-${i}`);
+                const tabBtn = document.getElementById(`tab-${i}`);
+                const decision = consentState.decisions[i];
+
+                if (decision === 'approve') {
+                    statusSpan.innerText = '✓ מאושר';
+                    statusSpan.className = 'text-[10px] text-emerald-600 font-bold';
+                    tabBtn.classList.add('completed');
+                } else if (decision === 'refuse') {
+                    statusSpan.innerText = '✗ סורב';
+                    statusSpan.className = 'text-[10px] text-rose-600 font-bold';
+                    tabBtn.classList.add('completed');
+                } else if (decision === 'conditional') {
+                    statusSpan.innerText = '! מותנה';
+                    statusSpan.className = 'text-[10px] text-amber-600 font-bold';
+                    tabBtn.classList.add('completed');
+                } else {
+                    statusSpan.innerText = 'טרם נקבע';
+                    statusSpan.className = 'text-[10px] text-slate-400 font-normal';
+                    tabBtn.classList.remove('completed');
+                }
+            }
+        }
+
+        // Calculate and animate progress metrics
+        function updateGlobalProgress() {
+            let answered = consentState.decisions.filter(d => d !== null).length;
+            // Weigh inputs from form as well (name, id, week, allergies)
+            let mName = document.getElementById('motherName').value.trim() !== '';
+            let mId = document.getElementById('motherId').value.trim() !== '';
+            let gWeek = document.getElementById('gestWeek').value.trim() !== '';
+            let allergies = document.getElementById('allergies').value.trim() !== '';
+
+            let formScore = (mName ? 1 : 0) + (mId ? 1 : 0) + (gWeek ? 1 : 0) + (allergies ? 1 : 0);
+            
+            // Combined progress metrics (9 total key points)
+            let totalWeights = 9;
+            let currentWeights = answered + formScore;
+            let percentage = Math.round((currentWeights / totalWeights) * 100);
+
+            if (percentage > 100) percentage = 100;
+
+            document.getElementById('global-progress').style.width = `${percentage}%`;
+            document.getElementById('progress-percent').innerText = `${percentage}%`;
+        }
+
+        // Dynamic builder for summary review card
+        function updateFinalSummary() {
+            const summaryList = document.getElementById('final-summary-list');
+            summaryList.innerHTML = '';
+
+            const titles = [
+                'בדיקת PKU (דם מהעקב)',
+                'רחצת יילוד במחלקה',
+                'טיפול מונע במשחת עיניים',
+                'הנקה, תזונה ופורמולה',
+                'חיסונים מומלצים'
+            ];
+
+            for (let i = 0; i < totalTabs; i++) {
+                const decision = consentState.decisions[i];
+                let descText = '';
+                let styleClass = '';
+
+                if (decision === 'approve') {
+                    descText = 'מאושר לביצוע';
+                    styleClass = 'text-emerald-400 font-bold';
+                } else if (decision === 'refuse') {
+                    descText = 'סורב על ידי ההורים';
+                    styleClass = 'text-rose-400 font-bold';
+                } else if (decision === 'conditional') {
+                    descText = 'מותנה בהערה מיוחדת';
+                    styleClass = 'text-amber-400 font-bold';
+                } else {
+                    descText = 'טרם נקבעה החלטה';
+                    styleClass = 'text-slate-400';
+                }
+
+                const li = document.createElement('li');
+                li.innerHTML = `${i+1}. ${titles[i]}: <span class="${styleClass}">${descText}</span>`;
                 
-                {/* Experience Block */}
-                <div className="relative pr-12 md:pr-16">
-                  <div className="absolute right-0 top-1 w-8 h-8 bg-white border-2 border-[#D4AF37] rounded-full flex items-center justify-center z-10">
-                    <div className="w-2.5 h-2.5 bg-[#D4AF37] rounded-full"></div>
-                  </div>
-                  <h3 className="text-2xl font-bold text-[#1A252C] mb-6">ניסיון מקצועי</h3>
-                  
-                  <div className="space-y-8">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-[#E8E1D5]">
-                      <div className="text-sm text-[#D4AF37] font-semibold mb-1">10/2024 - היום</div>
-                      <h4 className="text-lg font-bold text-[#1A252C]">אחות מוסמכת ביחידה לטיפול נמרץ פגים ויילודים</h4>
-                      <p className="text-[#4A5568] mt-2">חברה פעילה בצוות ניהול סיכונים קליני של המחלקה.</p>
-                    </div>
+                // Add note thumbnail if user inputted custom instructions
+                if (consentState.notes[i] && consentState.notes[i].trim() !== '') {
+                    const noteSpan = document.createElement('div');
+                    noteSpan.className = 'mr-4 text-slate-400 italic text-[11px] truncate max-w-full';
+                    noteSpan.innerText = `הערה: "${consentState.notes[i]}"`;
+                    li.appendChild(noteSpan);
+                }
 
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-[#E8E1D5]">
-                      <div className="text-sm text-[#D4AF37] font-semibold mb-1">02/2024 - 09/2024</div>
-                      <h4 className="text-lg font-bold text-[#1A252C]">אחות סטודנטית, מחלקה גריאטרית</h4>
-                      <p className="text-[#4A5568] mt-2">בית חולים ציבורי אסותא אשדוד. הובלת פרויקטים תפקודיים.</p>
-                    </div>
-                  </div>
-                </div>
+                summaryList.appendChild(li);
+            }
+        }
 
-                {/* Education & Certifications Block */}
-                <div className="relative pr-12 md:pr-16">
-                  <div className="absolute right-0 top-1 w-8 h-8 bg-white border-2 border-[#D4AF37] rounded-full flex items-center justify-center z-10">
-                    <div className="w-2.5 h-2.5 bg-[#D4AF37] rounded-full"></div>
-                  </div>
-                  <h3 className="text-2xl font-bold text-[#1A252C] mb-6">השכלה והסמכות קליניות</h3>
-                  
-                  <div className="space-y-6">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-[#E8E1D5] hover:shadow-md transition-shadow">
-                      <div className="text-sm text-[#D4AF37] font-semibold mb-1">צפי סיום: מרץ 2027</div>
-                      <h4 className="text-lg font-bold text-[#1A252C]">קורס על-בסיסי בטיפול נמרץ פגים</h4>
-                      <p className="text-[#4A5568] mt-1">בית הספר לסיעוד שיינבורן. הסמכה מתקדמת לטיפול ביילודים ופגים במצבי סיכון חיים.</p>
-                    </div>
 
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-[#E8E1D5] hover:shadow-md transition-shadow">
-                      <div className="text-sm text-[#D4AF37] font-semibold mb-1">השתלמות מקצועית</div>
-                      <h4 className="text-lg font-bold text-[#1A252C]">בינה מלאכותית (AI) במערכת הבריאות</h4>
-                      <p className="text-[#4A5568] mt-1">אוניברסיטת תל אביב. הבנה והטמעה של כלים טכנולוגיים מתקדמים וחדשנות בסיעוד.</p>
-                    </div>
+        // Signature Canvas Logic
+        function initSignaturePad() {
+            canvas = document.getElementById('signature-pad');
+            ctx = canvas.getContext('2d');
 
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-[#E8E1D5]">
-                      <div className="text-sm text-[#D4AF37] font-semibold mb-1">10/2020 - 09/2024</div>
-                      <h4 className="text-lg font-bold text-[#1A252C]">תואר ראשון (B.A) בסיעוד</h4>
-                      <p className="text-[#4A5568] mt-1">אוניברסיטת בן גוריון בנגב. ממוצע: 89.7. מעבר מבחן ממשלתי בהצטיינות.</p>
-                    </div>
-                  </div>
-                </div>
+            // Mouse Events
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseleave', stopDrawing);
 
-              </div>
+            // Touch Events (For mobile devices)
+            canvas.addEventListener('touchstart', startDrawingTouch, { passive: false });
+            canvas.addEventListener('touchend', stopDrawing);
+            canvas.addEventListener('touchmove', drawTouch, { passive: false });
+        }
 
-              {/* Mobile CTA Button */}
-              <div className="mt-12 text-center md:hidden">
-                <button 
-                  onClick={handleDownload}
-                  className="inline-flex items-center gap-3 bg-[#1A252C] text-white px-8 py-4 rounded-full font-bold text-lg hover:bg-[#D4AF37] transition-colors w-full justify-center"
-                >
-                  <Download size={20} />
-                  להורדת קורות חיים מלאים
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
+        function resizeCanvas() {
+            if (!canvas) return;
+            const ratio = Math.max(window.devicePixelRatio || 1, 1);
+            const width = canvas.parentElement.offsetWidth;
+            canvas.width = width;
+            canvas.height = 140; 
+            
+            // Redraw configuration after canvas size resets
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#0f172a'; // Slate-900 color for signature stroke
+        }
 
-        {/* TAB 6: Contact */}
-        {activeTab === 'contact' && (
-          <section className="px-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
-            <div className="max-w-4xl mx-auto text-center mt-12 bg-[#1A252C] rounded-3xl p-12 text-white shadow-xl">
-              <h2 className="text-3xl font-bold mb-8">מעוניינים לשתף פעולה?</h2>
-              <p className="text-[#A0AAB2] mb-12 text-lg max-w-2xl mx-auto">
-                בין אם מדובר ביוזמה קלינית חדשה, פיתוח טכנולוגי בבריאות, או סתם כדי להתייעץ – אשמח לשמוע מכם.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row justify-center gap-6">
-                <a 
-                  href="https://wa.me/972542558582?text=היי%20נעמה,%20הגעתי%20דרך%20האתר%20שלך%20ואשמח%20לדבר"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-3 bg-[#25D366] text-white px-8 py-4 rounded-full font-bold text-lg hover:bg-[#1EBE5D] shadow-md transition-all duration-300 transform hover:-translate-y-1"
-                >
-                  <MessageCircle size={24} />
-                  שליחת הודעת WhatsApp
-                </a>
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
 
-                <a 
-                  href="mailto:alonaamal@gmail.com"
-                  className="inline-flex items-center justify-center gap-3 bg-white text-[#1A252C] px-8 py-4 rounded-full font-bold text-lg hover:bg-[#E8E1D5] shadow-md transition-all duration-300 transform hover:-translate-y-1"
-                >
-                  <Mail size={24} />
-                  שליחת דואר אלקטרוני
-                </a>
-              </div>
-            </div>
-          </section>
-        )}
+        function getTouchPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: e.touches[0].clientX - rect.left,
+                y: e.touches[0].clientY - rect.top
+            };
+        }
 
-      </main>
+        function startDrawing(e) {
+            isDrawing = true;
+            hasSigned = true;
+            document.getElementById('signature-status').innerText = 'חתימה נקלטה';
+            document.getElementById('signature-status').className = 'text-emerald-400 font-bold';
+            const pos = getMousePos(e);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            checkFormValidity();
+        }
 
-      {/* Footer */}
-      <footer className="bg-[#111820] text-white py-6 text-center border-t border-gray-800">
-        <p className="text-[#A0AAB2] text-sm">© {new Date().getFullYear()} נעמה אלון דונגי. כל הזכויות שמורות.</p>
-      </footer>
-    </div>
-  );
-}
+        function startDrawingTouch(e) {
+            e.preventDefault();
+            isDrawing = true;
+            hasSigned = true;
+            document.getElementById('signature-status').innerText = 'חתימה נקלטה';
+            document.getElementById('signature-status').className = 'text-emerald-400 font-bold';
+            const pos = getTouchPos(e);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            checkFormValidity();
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            const pos = getMousePos(e);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        }
+
+        function drawTouch(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const pos = getTouchPos(e);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+        }
+
+        function clearSignature() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            hasSigned = false;
+            document.getElementById('signature-status').innerText = 'חובה לחתום כדי לשלוח';
+            document.getElementById('signature-status').className = 'text-rose-400';
+            checkFormValidity();
+        }
+
+
+        // Form checks to ensure data is filled before submission
+        function checkFormValidity() {
+            const motherName = document.getElementById('motherName').value.trim();
+            const motherId = document.getElementById('motherId').value.trim();
+            const gestWeek = document.getElementById('gestWeek').value.trim();
+            const allergies = document.getElementById('allergies').value.trim();
+            const legalCheck = document.getElementById('legal-check').checked;
+
+            // Check if all consents are answered
+            const decisionsAnswered = consentState.decisions.every(d => d !== null);
+
+            const isFormFullyValid = motherName && motherId && gestWeek && allergies && legalCheck && decisionsAnswered && hasSigned;
+
+            const submitBtn = document.getElementById('submit-btn');
+            if (isFormFullyValid) {
+                submitBtn.removeAttribute('disabled');
+            } else {
+                submitBtn.setAttribute('disabled', 'true');
+            }
+
+            // Continuously sync stats
+            updateGlobalProgress();
+            return isFormFullyValid;
+        }
+
+        // Submit actions and layout change
+        function submitConsentForm() {
+            saveCurrentNotes(); // Ensure final note state is cached
+
+            const errorBlock = document.getElementById('validation-errors');
+            errorBlock.classList.add('hidden');
+
+            // Final safety validation
+            const motherName = document.getElementById('motherName').value.trim();
+            const motherId = document.getElementById('motherId').value.trim();
+            const gestWeek = document.getElementById('gestWeek').value.trim();
+            const allergies = document.getElementById('allergies').value.trim();
+            const legalCheck = document.getElementById('legal-check').checked;
+
+            const missing = [];
+            if (!motherName) missing.push('שם האם');
+            if (!motherId) missing.push('תעודת זהות');
+            if (!gestWeek) missing.push('שבוע לידה');
+            if (!allergies) missing.push('רגישויות ומגבלות רפואיות');
+            
+            const decisionsAnswered = consentState.decisions.every(d => d !== null);
+            if (!decisionsAnswered) missing.push('קביעת בחירה בכל 5 סעיפי ההסכמה');
+            if (!legalCheck) missing.push('סימון תיבת אישור והבנת ההצהרה');
+            if (!hasSigned) missing.push('ציור חתימה ידנית');
+
+            if (missing.length > 0) {
+                errorBlock.innerText = `אנא השלימו את השדות הבאים לפני השליחה: ${missing.join(', ')}`;
+                errorBlock.classList.remove('hidden');
+                errorBlock.scrollIntoView({ behavior: 'smooth' });
+                return;
+            }
+
+            // Process success actions
+            document.getElementById('success-mother-name').innerText = motherName;
+            document.getElementById('success-mother-id').innerText = motherId;
+            document.getElementById('success-date').innerText = new Date().toLocaleString('he-IL');
+
+            // Hide main panels, show success layout
+            document.getElementById('details-form').parentElement.classList.add('hidden');
+            document.getElementById('tabs-container').parentElement.parentElement.classList.add('hidden');
+            document.getElementById('signature-section').classList.add('hidden');
+            document.getElementById('success-screen').classList.remove('hidden');
+            document.getElementById('success-screen').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Easy reset if needed
+        function resetForm() {
+            // Restore default states
+            consentState.decisions = Array(totalTabs).fill(null);
+            consentState.notes = Array(totalTabs).fill('');
+            hasSigned = false;
+
+            document.getElementById('details-form').reset();
+            document.getElementById('legal-check').checked = false;
+            
+            clearSignature();
+            switchTab(0);
+
+            // Toggle screens back
+            document.getElementById('details-form').parentElement.classList.remove('hidden');
+            document.getElementById('tabs-container').parentElement.parentElement.classList.remove('hidden');
+            document.getElementById('signature-section').classList.remove('hidden');
+            document.getElementById('success-screen').classList.add('hidden');
+            
+            updateGlobalProgress();
+            updateFinalSummary();
+        }
+
+        // Bind keyboard inputs & automatic updates on detail modifications
+        document.getElementById('motherName').addEventListener('input', checkFormValidity);
+        document.getElementById('motherId').addEventListener('input', checkFormValidity);
+        document.getElementById('gestWeek').addEventListener('input', checkFormValidity);
+        document.getElementById('allergies').addEventListener('input', checkFormValidity);
+    </script>
+</body>
+</html>
